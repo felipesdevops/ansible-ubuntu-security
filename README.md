@@ -114,6 +114,4 @@ Após ajustar o `hosts.ini` e o script `.sh`, siga os passos abaixo para rodar a
 
 Este projeto facilita a atualização de pacotes de segurança em servidores Ubuntu usando Ansible. Ajuste os arquivos conforme o ambiente de destino, e utilize o script `.sh` para automatizar o processo de atualização e geração de logs.
 
-Se você deseja disponibilizar o código no GitHub, **remova ou ajuste** qualquer informação sensível (como IPs e senhas) nos arquivos antes de publicá-los. Utilize variáveis para proteger essas informações.
-
 ---
