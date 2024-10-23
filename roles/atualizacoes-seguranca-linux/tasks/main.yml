@@ -1,0 +1,139 @@
+---
+- name: Atualizar a lista de pacotes
+  apt:
+    update_cache: yes
+  register: apt_update
+- debug:
+    var: apt_update
+
+- name: Garantir que o arquivo ubuntu-security.list exista
+  shell: >
+    sh -c 'echo "deb http://security.ubuntu.com/ubuntu {{ ansible_distribution_release }}-security main restricted universe multiverse" > /etc/apt/sources.list.d/ubuntu-security.list'
+  args:
+    creates: /etc/apt/sources.list.d/ubuntu-security.list
+  register: create_security_list
+- debug:
+    var: create_security_list    
+
+- name: Atualizar cache do apt com as fontes de seguranca
+  apt:
+    update_cache: yes
+  register: apt_update_security
+- debug:
+    var: apt_update_security
+
+- name: Listar atualizacoes de seguranca disponiveis
+  shell: >
+    apt-get -s upgrade | grep -i security || true
+  register: security_updates
+  ignore_errors: yes  
+- debug:
+    var: security_updates  
+
+- name: Verificar se ha atualizacoes de seguranca
+  set_fact:
+    security_message: |
+      {% if security_updates.stdout | length == 0 %}
+      Nenhuma atualizacao de seguranca disponivel.
+      {% else %}
+      Atualizacoes de Seguranca Disponiveis:
+      {{ security_updates.stdout }}
+      {% endif %}
+  register: security_message_set_fact
+- debug:
+    var: security_message_set_fact      
+
+- name: Instalar atualizacoes de seguranca
+  shell: >
+    apt-get upgrade -o Dir::Etc::sourcelist="sources.list.d/ubuntu-security.list"
+    -o Dir::Etc::sourceparts="-"
+    -o APT::Get::List-Cleanup="0" -y
+  register: upgrade_output
+  when: security_updates.stdout | length > 0
+- debug:
+    var: upgrade_output  
+
+- name: Adicionar saída da instalação ao log
+  set_fact:
+    security_message: "{{ security_message }}\n\nSaída da Instalação:\n{{ upgrade_output.stdout | default('Nenhuma atualização foi aplicada.') }}"
+  register: set_fact_install_log
+- debug:
+    var: set_fact_install_log    
+
+- name: Garantir que o diretório de logs exista
+  file:
+    path: /var/log/ansible
+    state: directory
+    mode: '0777'
+  register: log_dir
+- debug:
+    var: log_dir    
+
+- name: Criar arquivo de log com atualizacoes de seguranca ou ausencia delas
+  copy:
+    content: "{{ security_message }}"
+    dest: "/var/log/ansible/security_upgrade_output_{{ inventory_hostname }}_{{ ansible_date_time.date }}.log"
+  when: security_message is defined  
+  register: log_creation
+- debug:
+    var: log_creation  
+
+- name: Verificar se o arquivo de log foi criado
+  stat:
+    path: "/var/log/ansible/security_upgrade_output_{{ inventory_hostname }}_{{ ansible_date_time.date }}.log"  
+  register: log_file
+- debug:
+    var: log_file  
+
+- name: Buscar arquivo de log para localhost
+  fetch:
+    src: "/var/log/ansible/security_upgrade_output_{{ inventory_hostname }}_{{ ansible_date_time.date }}.log"
+    dest: "/path/to/local/security_upgrade_output_{{ inventory_hostname }}_{{ ansible_date_time.date }}.log"  # Ajustar caminho local
+    flat: yes
+  when: log_file.stat.exists  # Verifica se o arquivo foi criado antes de tentar buscar  
+  register: fetch_log
+- debug:
+    var: fetch_log  
+
+- name: Encontrar arquivos de log
+  find:
+    paths: "/path/to/local"  # Ajustar caminho local
+    patterns:
+      - "security_upgrade_*"
+      - "update_ok.log"
+      - "update_erro.log"    
+  register: log_files
+  delegate_to: localhost
+
+- debug:
+    var: log_files
+  delegate_to: localhost
+
+- name: Compactar arquivos de log em um arquivo .zip
+  archive:
+    path: "{{ log_files.files | map(attribute='path') | list }}"
+    dest: "/path/to/local/logs.zip"  # Ajustar caminho local
+    format: zip
+  when: log_files.matched > 0
+  delegate_to: localhost  
+
+- name: Enviar e-mail com arquivos de log anexados
+  mail:
+    host: "{{ smtp_host }}"  # Variável para o host SMTP
+    port: "{{ smtp_port }}"  # Variável para a porta SMTP
+    username: "{{ smtp_username }}"  # Variável para o nome de usuário
+    password: "{{ smtp_password }}"  # Variável para a senha
+    to: "destinatario@dominio.com"  # Ajustar e-mail de destino
+    subject: "Atualizações de Segurança"
+    body: |
+      As atualizações de segurança foram concluídas nos seguintes servidores:
+      {% for host in groups['servers'] %}
+      - {{ host }}
+      {% endfor %}
+      Consulte os logs em anexo para detalhes dos pacotes atualizados.
+    attach: "/path/to/local/logs.zip"  # Ajustar caminho local
+    sender: "{{ smtp_username }}"
+  when: log_files.matched > 0
+  delegate_to: localhost  
+
+...

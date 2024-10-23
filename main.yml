@@ -1,0 +1,6 @@
+- name: Atualizar pacotes de seguranca em todos os servidores
+  hosts: servers
+  become: yes
+  tasks:
+    - include_role:
+        name: atualizacoes-seguranca-linux
